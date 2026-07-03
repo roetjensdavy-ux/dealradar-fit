@@ -1,0 +1,81 @@
+# ============================================================
+# DealRadar.fit — Docker Compose
+# Deploys DealRadar API + Frontend on Hetzner VPS
+#
+# Usage:
+#   docker compose -f docker-compose.dealradar.yml up -d
+#   docker compose -f docker-compose.dealradar.yml build --no-cache
+#   docker compose -f docker-compose.dealradar.yml logs -f
+#
+# Assumes an external network "james-network" exists:
+#   docker network create james-network
+#
+# NOTE: This compose uses the SHARED postgres and redis from
+# the main docker-compose.yml. They must be running first.
+# ============================================================
+
+version: '3.8'
+
+services:
+  # ============================================================
+  # DEALRADAR API — FastAPI Backend
+  # ============================================================
+  dealradar-api:
+    build:
+      context: ./dealradar/dealradar-api
+      dockerfile: Dockerfile
+    container_name: dealradar-api
+    ports:
+      - "8001:8001"
+    environment:
+      - DATABASE_URL=${DEALRADAR_DATABASE_URL:-postgresql://james:${DB_PASSWORD:-changeme}@postgres:5432/jamesai}
+      - REDIS_URL=${DEALRADAR_REDIS_URL:-redis://redis:6379/1}
+      - API_PORT=8001
+      - CORS_ORIGINS=${CORS_ORIGINS:-*}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    networks:
+      - james-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+
+  # ============================================================
+  # DEALRADAR FRONTEND — React SPA (Nginx)
+  # ============================================================
+  dealradar-frontend:
+    build:
+      context: ./dealradar/dealradar-frontend
+      dockerfile: Dockerfile
+    container_name: dealradar-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - VITE_API_URL=${VITE_API_URL:-/api/v1}
+    depends_on:
+      - dealradar-api
+    networks:
+      - james-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 128M
+        reservations:
+          cpus: '0.1'
+          memory: 32M
+
+# ============================================================
+# NETWORKS
+# ============================================================
+# The main docker-compose.yml creates this network.
+# Mark it as external so both compose files share it.
+networks:
+  james-network:
+    external: true
